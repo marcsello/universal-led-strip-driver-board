@@ -12,9 +12,12 @@ SET(CMAKE_C_FLAGS "-mmcu=${MCU} -DF_CPU=${F_CPU} -Os -std=c11 -Wall -Wstrict-pro
 SET(CMAKE_C_LINK_FLAGS "-mmcu=${MCU}")
 SET(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin")
 
-add_executable(universal_led_strip_driver_board main.c
+add_executable(
+        universal_led_strip_driver_board
+        main.c
         input.h
-        input.c)
+        input.c
+)
 
 ADD_CUSTOM_COMMAND(TARGET ${PROJECT_NAME} POST_BUILD COMMAND avr-objcopy -j .text -j .data -O ihex ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${PROJECT_NAME} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${PROJECT_NAME}.hex)
 
