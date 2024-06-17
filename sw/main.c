@@ -46,29 +46,6 @@ void init_board(void) {
     sei();
 }
 
-
-void set_pwm(uint8_t ch, uint8_t val) {
-    uint8_t inv = 0xff - val; // invert value
-    switch (ch) {
-        case 0:
-            OCR0B = inv;
-            return;
-        case 1:
-            OCR0A = inv;
-            return;
-        case 2:
-            OCR1AL = inv; // we only need to set the low byte, because that timer is configured to run in 8bit mode
-            return;
-        case 3:
-            OCR1BL = inv;
-            return;
-        default:
-            // ignore
-            return;
-    }
-}
-
-
 #define FAULT_PATTERN_PSU_ERR 0x0f // slow blink
 #define FAULT_PATTERN_LOGIC_ERR 0x55 // fast blink
 _Noreturn void fault(uint8_t pattern) {
@@ -108,6 +85,38 @@ _Noreturn void fault(uint8_t pattern) {
     }
 }
 
+void set_pwm(uint8_t ch, uint8_t val) {
+    uint8_t inv = 0xff - val; // invert value
+    switch (ch) {
+        case 0:
+            OCR0B = inv;
+            return;
+        case 1:
+            OCR0A = inv;
+            return;
+        case 2:
+            OCR1AL = inv; // we only need to set the low byte, because that timer is configured to run in 8bit mode
+            return;
+        case 3:
+            OCR1BL = inv;
+            return;
+        default:
+            // ignore
+            return;
+    }
+}
+
+inline static void set_psu(uint8_t val) {
+    if (val) {
+        PORTA &= 0xfe; // pull PA0/PS-ON to ground = turn on PSU
+    } else {
+        PORTA |= 0x01; // pull PA0/PS-ON HIGH = turn off PSU
+    }
+}
+
+inline static uint8_t psu_pg(void) {
+    return PINA & 0x02 // PA1: Power good: high active
+}
 
 volatile uint8_t timer_flag = 0x00; // msb = ticks counter enable, lsb = tick indicator
 volatile uint16_t ticks = 0x0000;
@@ -131,7 +140,6 @@ ISR(__vector_default) { // all unhandled interrupts
 #define STATE_PSU_SHUTDOWN 6 // wait for PG to go low
 #define STATE_GO_STANDBY 7 // prepare stuff to go back to standby
 
-
 int main(void) {
     init_board();
 
@@ -151,7 +159,7 @@ int main(void) {
                 if (input) {
                     state = STATE_START;
                 }
-                if (PINA & 0x02) { // PG should be low, if hi than it's a fault
+                if (psu_pg()) { // PG should be low, if hi than it's a fault
                     fault(FAULT_PATTERN_PSU_ERR);
                 }
             }
@@ -168,13 +176,13 @@ int main(void) {
                     }
                 }
 
-                PORTA &= 0xfe; // pull PS-ON to ground = turn on PSU
+                set_psu(0x01); // turn on PSU
                 state = STATE_PSU_WARMUP;
             }
                 break;
             case STATE_PSU_WARMUP: {
 
-                if (PINA & 0x02) { // wait for PA1 high
+                if (psu_pg()) { // wait for power good
                     ticks = 0; // reset tick counter
                     state = STATE_ACTIVE;
                 } else if (ticks > 32) { // ~500ms (512ms)
@@ -233,7 +241,7 @@ int main(void) {
                     }
                 }
 
-                if (!(PINA & 0x02)) { // PG should be high, if it's low, than this is a fault
+                if (!psu_pg()) { // PG should be high, if it's low, than this is a fault
                     fault(FAULT_PATTERN_PSU_ERR);
                 }
 
@@ -250,13 +258,13 @@ int main(void) {
                     }
                 }
 
-                PORTA |= 0x01; // pull PS-ON HIGH = turn off PSU
+                set_psu(0x00); // turn off PSU
                 state = STATE_PSU_SHUTDOWN;
             }
                 break;
             case STATE_PSU_SHUTDOWN: {
 
-                if (!(PINA & 0x02)) { // wait for PA1 low
+                if (!psu_pg()) { // wait for power good off
                     ticks = 0; // reset tick counter
                     state = STATE_GO_STANDBY;
                 } else if (ticks > 32) { // ~500ms (512ms)
