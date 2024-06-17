@@ -34,5 +34,5 @@ uint8_t read_input(void) { // highly magic, sleep-free de-bounce. Sadly, the act
 }
 
 void mask_input(uint8_t mask) { // mask considers the masked pins as low, until they change state...
-    input_mask &= (uint8_t)~mask; // invert it, so set bits will become zero, and will produce zero in the end
+    input_mask &= ~mask; // invert it, so set bits will become zero, and will produce zero in the end
 }

@@ -200,7 +200,7 @@ int main(void) {
                 }
                 last_input = input;
 
-                // check if this loop is a "tick" loop
+0                // check if this loop is a "tick" loop
                 uint8_t tick = 0x00;
                 if (timer_flag & 0x01) {
                     tick = 0x01;
