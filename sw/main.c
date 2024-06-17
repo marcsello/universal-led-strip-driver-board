@@ -39,7 +39,7 @@ void init_board(void) {
     OCR1AL = 0xff; // inverted mode, set duty cycle to 0
     OCR1BL = 0xff;
 
-    // Configure watchdog
+    // Configure watchdog timer as interrupt source
     WDTCSR = (1 << WDIE); // interrupt enable, pre-scaler set to 2 = 16ms
 
     // enable interrupts
@@ -55,11 +55,11 @@ _Noreturn void fault(uint8_t pattern) {
     // Disable all interrupts
     cli();
 
-    // set all pwm output to 0 duty cycle (this is not actually needed)
-    set_pwm(0, 0);
-    set_pwm(1, 0);
-    set_pwm(2, 0);
-    set_pwm(3, 0);
+    // set all pwm output to 0% duty cycle (this is not actually needed)
+    OCR0B = 0xff;
+    OCR0A = 0xff;
+    OCR1AL = 0xff;
+    OCR1BL = 0xff;
 
     // Disable PWM outputs
     TCCR0A = 0x00; // disconnect comparator from port
@@ -101,8 +101,7 @@ void set_pwm(uint8_t ch, uint8_t val) {
             OCR1BL = inv;
             return;
         default:
-            // ignore
-            return;
+            fault(FAULT_PATTERN_LOGIC_ERR);
     }
 }
 
@@ -115,7 +114,7 @@ inline static void set_psu(uint8_t val) {
 }
 
 inline static uint8_t psu_pg(void) {
-    return PINA & 0x02 // PA1: Power good: high active
+    return PINA & 0x02; // PA1: Power good: high active
 }
 
 volatile uint8_t timer_flag = 0x00; // msb = ticks counter enable, lsb = tick indicator
