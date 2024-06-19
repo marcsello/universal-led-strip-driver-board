@@ -5,6 +5,14 @@
 
 #include "input.h"
 
+#ifndef ENABLED_CHANNELS
+#define ENABLED_CHANNELS 4
+#endif
+
+#if ENABLED_CHANNELS > 4 || ENABLED_CHANNELS < 1
+#error "Configure 1-4 channels"
+#endif
+
 
 void init_board(void) {
     // no interrupts while initializing
@@ -28,6 +36,7 @@ void init_board(void) {
     OCR0A = 0xff; // inverted mode, set duty cycle to 0
     OCR0B = 0xff;
 
+#if ENABLED_CHANNELS > 2
     // Timer 1
     TCCR1A = (1 << COM1A1) | (1 << COM1A0) | // Set OC1A/OC1B on Compare Match, clear OC1A/OC1B at TOP
              (1 << COM1B1) | (1 << COM1B0) |
@@ -38,6 +47,8 @@ void init_board(void) {
 
     OCR1AL = 0xff; // inverted mode, set duty cycle to 0
     OCR1BL = 0xff;
+
+#endif
 
     // Configure watchdog timer as interrupt source
     WDTCSR = (1 << WDIE); // interrupt enable, pre-scaler set to 2 = 16ms
@@ -91,15 +102,21 @@ void set_pwm(uint8_t ch, uint8_t val) {
         case 0:
             OCR0B = inv;
             return;
+#if ENABLED_CHANNELS > 1
         case 1:
             OCR0A = inv;
             return;
+#endif
+#if ENABLED_CHANNELS > 2
         case 2:
             OCR1AL = inv; // we only need to set the low byte, because that timer is configured to run in 8bit mode
             return;
+#endif
+#if ENABLED_CHANNELS > 3
         case 3:
             OCR1BL = inv;
             return;
+#endif
         default:
             fault(FAULT_PATTERN_LOGIC_ERR);
     }
@@ -144,7 +161,11 @@ int main(void) {
 
     uint8_t state = STATE_STANDBY;
 
-    uint8_t levels[4] = {0, 0, 0, 0};
+    uint8_t levels[ENABLED_CHANNELS];
+    for (uint8_t i = 0; i < ENABLED_CHANNELS; i++) {
+        levels[0] = 0;
+    }
+
     uint8_t last_input = 0x00;
 
     while (1) {
@@ -168,7 +189,7 @@ int main(void) {
                 timer_flag |= 0x80; // enable tick counter
 
                 // zero out levels, in case they still have some garbage data...
-                for (uint8_t i = 0; i < 4; i++) {
+                for (uint8_t i = 0; i < ENABLED_CHANNELS; i++) {
                     if (levels[i] > 0) {
                         levels[i] = 0;
                         set_pwm(i, 0);
@@ -200,14 +221,14 @@ int main(void) {
                 }
                 last_input = input;
 
-0                // check if this loop is a "tick" loop
+                // check if this loop is a "tick" loop
                 uint8_t tick = 0x00;
                 if (timer_flag & 0x01) {
                     tick = 0x01;
                     timer_flag &= 0xfe; // set the first bit to zero
                 }
 
-                for (uint8_t i = 0; i < 4; i++) {
+                for (uint8_t i = 0; i < ENABLED_CHANNELS; i++) {
                     uint8_t changed = 0x00;
                     if (state & (1 << i)) {
                         if ((levels[i] < 0xff) && tick) {
@@ -250,7 +271,7 @@ int main(void) {
                 ticks = 0; // reset tick counter
 
                 // zero out levels, in case they still have some garbage data...
-                for (uint8_t i = 0; i < 4; i++) {
+                for (uint8_t i = 0; i < ENABLED_CHANNELS; i++) {
                     if (levels[i] > 0) {
                         levels[i] = 0;
                         set_pwm(i, 0);

@@ -4,6 +4,24 @@
 #include <stdint.h>
 #include <avr/io.h>
 
+#ifndef ENABLED_CHANNELS
+#define ENABLED_CHANNELS 4
+#endif
+
+#if ENABLED_CHANNELS > 4 || ENABLED_CHANNELS < 1
+#error "Configure 1-4 channels"
+#endif
+
+#if ENABLED_CHANNELS == 1
+#define PERMANENT_MASK 0b00000001
+#elif ENABLED_CHANNELS == 2
+#define PERMANENT_MASK 0b00000011
+#elif ENABLED_CHANNELS == 3
+#define PERMANENT_MASK 0b00000111
+#else
+#define PERMANENT_MASK 0xff
+#endif
+
 uint8_t cyc_since_last_change = 0x00;
 uint8_t last_state = 0x00;
 uint8_t stable_state = 0x00;
@@ -15,7 +33,7 @@ inline uint8_t map_input(void) {
 }
 
 uint8_t read_input(void) { // highly magic, sleep-free de-bounce. Sadly, the actual de-bouncing depends on the "speed" of the main loop.
-    uint8_t current_state = map_input();
+    uint8_t current_state = map_input() & PERMANENT_MASK;
     if (current_state != last_state) {
         cyc_since_last_change = 0x00;
         last_state = current_state;
