@@ -13,6 +13,9 @@
 #error "Configure 1-4 channels"
 #endif
 
+#define UART_BAUD 4800
+#define UBBR_VAL ((F_CPU / (UART_BAUD * 16L)) - 1)
+
 
 void init_board(void) {
     // no interrupts while initializing
@@ -52,6 +55,15 @@ void init_board(void) {
 
     // Configure watchdog timer as interrupt source
     WDTCSR = (1 << WDIE); // interrupt enable, pre-scaler set to 2 = 16ms
+
+    // UART
+    UCSRA = 0x00;
+    UCSRB = (1<<RXEN) | (1<<TXEN); // enable transmitter and receiver
+    UCSRC = (1<<UPM1) | (1<<UPM0) | (1<<UCSZ1) | (1<<UCSZ0); // enable odd parity, set 8-bit frame size
+
+    // set baud rate
+    UBRRH = (uint8_t)(UBBR_VAL >> 8);
+    UBRRL = (uint8_t)(UBBR_VAL);
 
     // enable interrupts
     sei();
@@ -134,15 +146,42 @@ inline static uint8_t psu_pg(void) {
     return PINA & 0x02; // PA1: Power good: high active
 }
 
-volatile uint8_t timer_flag = 0x00; // msb = ticks counter enable, lsb = tick indicator
-volatile uint16_t ticks = 0x0000;
+static volatile uint8_t timer_flag = 0x00; // msb = ticks counter enable, lsb+1 = transmit metrics, lsb = tick indicator
+static volatile uint16_t ticks = 0x0000;
 
-ISR(WDT_OVERFLOW_vect) {
-    timer_flag |= 0x01;
+ISR(WDT_OVERFLOW_vect) { // our "timer"
+    timer_flag |= 0x03;
     if (timer_flag & 0x80) {
         ticks++;
     }
 }
+
+#define FULL_FRAME_LEN (uint8_t)(ENABLED_CHANNELS+2)
+#define TAIL_BUF_LEN (uint8_t)(FULL_FRAME_LEN-1)
+
+static volatile uint8_t tx_frame_tail_buf[TAIL_BUF_LEN]; // the first byte sent immediately, this is only the tail
+static volatile uint8_t tx_tail_ptr = 0xff;
+
+ISR(USART_UDRE_vect) { // this is a quite lame interrupt as it always triggers when the corresponding flag is set
+    if (tx_tail_ptr < TAIL_BUF_LEN) {
+        UDR = tx_frame_tail_buf[tx_tail_ptr++];
+    } else {
+        UCSRB &= ~(1 << UDRIE); // this interrupt has to be disabled, or it will be generated constantly
+        tx_tail_ptr = 0xff; // indicate send ready condition
+    }
+}
+
+void tx_frame(const uint8_t *full_frame) {
+    while(!(UCSRA & (1<<UDRE)));
+
+    tx_tail_ptr = 0;
+    for (uint8_t i = 0; i < TAIL_BUF_LEN; i++) {
+        tx_frame_tail_buf[i] = full_frame[i+1];
+    }
+    UDR = full_frame[0]; // start transmission
+    UCSRB |= (1 << UDRIE); // Enable UDRE interrupt
+}
+
 
 ISR(__vector_default) { // all unhandled interrupts
     fault(FAULT_PATTERN_LOGIC_ERR);
@@ -163,16 +202,32 @@ int main(void) {
 
     uint8_t levels[ENABLED_CHANNELS];
     for (uint8_t i = 0; i < ENABLED_CHANNELS; i++) {
-        levels[0] = 0;
+        levels[i] = 0;
     }
 
     uint8_t last_input = 0x00;
 
     while (1) {
+
+        // timer sanity check
         if (ticks >= 65535) {
             // the tick counter should never go this high...
             fault(FAULT_PATTERN_LOGIC_ERR);
         }
+
+        // transmit metrics
+        if ((timer_flag & 0x02) && (tx_tail_ptr == 0xff)) {
+            timer_flag &= 0xfd;
+
+            uint8_t status = (state<<4) | last_input; // upper 4 bit: current status, lower 4 bit: inputs
+            uint8_t frame[FULL_FRAME_LEN] = {0x55, status}; // 0x55 is the preamble
+            for (uint8_t i = 0; i<ENABLED_CHANNELS; i++) {
+                frame[i+2] = levels[i];
+            }
+            tx_frame(frame);
+        }
+
+        // main state machine
         switch (state) {
             case STATE_STANDBY: {
                 uint8_t input = read_input();
@@ -268,6 +323,7 @@ int main(void) {
             }
                 break;
             case STATE_STOP: {
+                last_input = 0x00; // reset last input indicator
                 ticks = 0; // reset tick counter
 
                 // zero out levels, in case they still have some garbage data...
