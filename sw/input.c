@@ -4,9 +4,7 @@
 #include <stdint.h>
 #include <avr/io.h>
 
-#ifndef ENABLED_CHANNELS
-#define ENABLED_CHANNELS 4
-#endif
+#include "input.h"
 
 #if ENABLED_CHANNELS > 4 || ENABLED_CHANNELS < 1
 #error "Configure 1-4 channels"
