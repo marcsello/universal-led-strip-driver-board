@@ -137,7 +137,7 @@ int main(void) {
 
                 for (uint8_t i = 0; i < ENABLED_CHANNELS; i++) {
                     uint8_t changed = 0x00;
-                    if (state & (1 << i)) {
+                    if (input & (1 << i)) {
                         if ((levels[i] < 0xff) && tick) {
                             levels[i]++;
                             changed = 0x01;
