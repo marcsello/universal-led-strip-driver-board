@@ -72,17 +72,19 @@ int main(void) {
             fault(FAULT_PATTERN_LOGIC_ERR);
         }
 
+        // read input in every loop
+        uint8_t input = read_input();
+
         // transmit metrics
         if ((metrics_timer > 8) && tx_ready()) {
             metrics_timer = 0;
-            transmit_metrics(state, last_input, levels);
+            transmit_metrics(state, input, levels);
         }
 
         // main state machine
         switch (state) {
             case STATE_STANDBY: {
-                uint8_t input = read_input();
-                if (input) {
+                if (input) { // any input is pulled high = contact opened = door opened
                     state = STATE_START;
                 }
                 if (psu_pg()) { // PG should be low, if hi than it's a fault
@@ -118,7 +120,6 @@ int main(void) {
             }
                 break;
             case STATE_ACTIVE: {
-                uint8_t input = read_input();
 
                 // reset tick counter when some state changes...
                 if (input != last_input) {
